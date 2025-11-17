@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from .routers import auth_otp
 from fastapi.middleware.cors import CORSMiddleware
 from .routers import ussd, auth, wallet, agent, admin
 from .database import Base, engine
@@ -24,6 +25,7 @@ app.include_router(wallet.router)
 app.include_router(agent.router)
 app.include_router(admin.router)
 app.include_router(ussd.router)
+app.include_router(auth_otp.router)
 
 @app.get("/")
 def root():
