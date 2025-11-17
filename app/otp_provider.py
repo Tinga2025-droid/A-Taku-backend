@@ -55,3 +55,8 @@ def verify_otp(db: Session, phone: str, otp_input: str):
 
     db.commit()
     return False, "OTP inválido."
+
+
+def send_otp(phone: str, db: Session):
+    otp = create_or_update_otp(db, phone)
+    return otp
