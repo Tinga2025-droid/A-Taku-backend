@@ -33,4 +33,4 @@ def root():
 
 @app.get("/healthz")
 def health_check():
-    return {"ok": True}
+    return {"ok": True}# redeploy fix 11/17/2025 14:05:20
