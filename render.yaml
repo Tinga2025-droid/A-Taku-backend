@@ -1,0 +1,9 @@
+﻿services:
+  - type: web
+    name: a-taku-backend
+    env: docker
+    region: frankfurt
+    rootDir: .
+    dockerfilePath: Dockerfile
+    autoDeploy: true
+    plan: starter
