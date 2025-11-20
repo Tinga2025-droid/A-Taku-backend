@@ -1,36 +1,67 @@
 from fastapi import FastAPI
-from .routers import auth_otp
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import ussd, auth, wallet, agent, admin
+
 from .database import Base, engine
+from .routers import auth, auth_otp, wallet, agent, admin, ussd
 
-app = FastAPI(title="A-Taku API", version="1.0.0")
 
+app = FastAPI(
+    title="A-Taku API",
+    version="2.0.0",
+    description="Sistema de carteira digital A-Taku — transfers, cashout, agentes, OTP e USSD"
+)
+
+
+# ------------------------------
+# 📌 Setup inicial da base de dados
+# ------------------------------
 @app.on_event("startup")
 def init_db():
+    """
+    Cria tabelas caso não existam.
+    Em produção é recomendado usar migrations (Alembic),
+    mas para now este auto-setup evita erros de deploy.
+    """
     Base.metadata.create_all(bind=engine)
 
-# CORS
+
+# ------------------------------
+# 🔧 CORS
+# ------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],   # Pode trocar para domínio do app / mobile
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Routers
-app.include_router(auth.router)
-app.include_router(wallet.router)
-app.include_router(agent.router)
-app.include_router(admin.router)
-app.include_router(ussd.router)
-app.include_router(auth_otp.router)
 
+# ------------------------------
+# 📌 Routers (ordem importa!)
+# ------------------------------
+app.include_router(auth.router)       # OTP + Login
+app.include_router(auth_otp.router)   # Login alternativo com verificação OTP
+app.include_router(wallet.router)     # Enviar, saldo, extrato
+app.include_router(agent.router)      # Depósito/cashout via agentes
+app.include_router(admin.router)      # Painel admin futuro
+app.include_router(ussd.router)       # USSD *229#
+
+
+# ------------------------------
+# 🔍 Rotas públicas
+# ------------------------------
 @app.get("/")
 def root():
-    return {"ok": True, "service": "A-Taku API"}
+    return {
+        "ok": True,
+        "service": "A-Taku API",
+        "version": "2.0.0",
+        "docs": "/docs",
+        "status": "running"
+    }
+
 
 @app.get("/healthz")
 def health_check():
-    return {"ok": True}# redeploy fix 11/17/2025 14:05:20
+    return {"ok": True, "status": "UP"}

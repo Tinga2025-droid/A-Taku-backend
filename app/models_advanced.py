@@ -1,12 +1,9 @@
 ﻿from datetime import datetime
+
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
+
 from .database import Base
 
-# KYC Levels:
-# A - Documento
-# B - Documento + Selfie
-# C - Documento + Selfie + Endereço
 
 class KYC(Base):
     __tablename__ = "kyc"
@@ -20,6 +17,7 @@ class KYC(Base):
     proof_of_address_url = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
@@ -29,6 +27,7 @@ class AuditLog(Base):
     amount = Column(Float, nullable=True)
     metadata = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class Ledger(Base):
     __tablename__ = "ledger"

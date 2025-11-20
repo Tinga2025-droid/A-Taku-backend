@@ -1,14 +1,24 @@
-﻿from .models_advanced import AuditLog
-from sqlalchemy.orm import Session
-from datetime import datetime
+﻿from datetime import datetime
 
-def audit_log(db: Session, user_id: int, action: str, amount: float = None, metadata: str = None):
+from sqlalchemy.orm import Session
+
+from .models_advanced import AuditLog
+
+
+def audit_log(
+    db: Session,
+    user_id: int | None,
+    action: str,
+    amount: float | None = None,
+    metadata: str | None = None,
+) -> None:
+    """Registo centralizado de auditoria (transações, falhas de PIN, etc.)."""
     entry = AuditLog(
         user_id=user_id,
         action=action,
         amount=amount,
         metadata=metadata,
-        created_at=datetime.utcnow()
+        created_at=datetime.utcnow(),
     )
     db.add(entry)
     db.commit()

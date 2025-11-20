@@ -1,25 +1,23 @@
-﻿# app/otp_provider.py
-import random
+﻿import random
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from .otp_models import OTPCode
 
-# ------------------------------
-# Gera um OTP de 6 dígitos
-# ------------------------------
-def generate_otp():
+from sqlalchemy.orm import Session
+
+from .otp_models import OTPCode  # modelo que já tens no projeto
+
+
+def generate_otp() -> str:
+    """Gera um OTP de 6 dígitos."""
     return f"{random.randint(100000, 999999)}"
 
-# ------------------------------
-# Envia SMS (placeholder)
-# ------------------------------
-def send_otp_sms(phone: str, otp: str):
+
+def send_otp_sms(phone: str, otp: str) -> None:
+    """Placeholder de envio de SMS. Trocar pela integração real (AfricasTalking, etc.)."""
     print(f"[SMS ENVIADO] OTP para {phone}: {otp}")
 
-# ------------------------------
-# Cria ou atualiza OTP no banco
-# ------------------------------
-def create_or_update_otp(db: Session, phone: str):
+
+def create_or_update_otp(db: Session, phone: str) -> str:
+    """Cria ou atualiza um OTP para o número indicado."""
     otp = generate_otp()
 
     record = db.query(OTPCode).filter(OTPCode.phone == phone).first()
@@ -35,7 +33,7 @@ def create_or_update_otp(db: Session, phone: str):
             otp=otp,
             created_at=datetime.utcnow(),
             attempts=0,
-            blocked_until=None
+            blocked_until=None,
         )
         db.add(record)
 
@@ -43,10 +41,9 @@ def create_or_update_otp(db: Session, phone: str):
     send_otp_sms(phone, otp)
     return otp
 
-# ------------------------------
-# Verifica o OTP
-# ------------------------------
+
 def verify_otp(db: Session, phone: str, otp_input: str):
+    """Verifica OTP com expiração e bloqueio por tentativas falhadas."""
     record = db.query(OTPCode).filter(OTPCode.phone == phone).first()
 
     if not record:
@@ -65,19 +62,14 @@ def verify_otp(db: Session, phone: str, otp_input: str):
 
     # Tentativa inválida
     record.attempts += 1
-
     if record.attempts >= 3:
         record.blocked_until = datetime.utcnow() + timedelta(minutes=10)
 
     db.commit()
     return False, "OTP inválido."
 
-# ------------------------------
-# Função simples para o auth.py
-# ------------------------------
+
 def send_otp(phone: str, db: Session):
-    """
-    Wrapper para facilitar import no auth.py
-    """
+    """Wrapper simples se quiser chamar só send_otp em outros módulos."""
     otp = create_or_update_otp(db, phone)
     return otp

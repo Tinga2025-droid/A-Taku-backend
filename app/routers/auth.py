@@ -1,72 +1,60 @@
-# app/routers/auth.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
 
-from app.database import get_db, Base, engine
-from app.models import User, OTP
-from app.schemas import OTPRequest, LoginRequest, TokenResponse
-from app.otp_provider import send_otp
-from app.auth import create_access_token, hash_password
-
-Base.metadata.create_all(bind=engine)
+from ..database import get_db
+from ..models import User
+from ..schemas import OTPRequest, LoginRequest, TokenResponse
+from ..otp_provider import create_or_update_otp, verify_otp
+from ..auth import create_access_token, hash_password, verify_password
+from ..utils import normalize_phone
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 DEFAULT_PIN = "0000"
 
-def normalize_phone(p: str) -> str:
-    p = p.strip().replace(" ", "")
-    if p.startswith("00"):
-        p = "+" + p[2:]
-    if not p.startswith("+"):
-        if p.startswith(("84", "85", "86", "87", "83", "82")):
-            p = "+258" + p
-        elif p.startswith("258"):
-            p = "+" + p
-        else:
-            p = "+" + p
-    return p
 
 @router.post("/otp")
 def request_otp(payload: OTPRequest, db: Session = Depends(get_db)):
     phone = normalize_phone(payload.phone)
-    user = db.query(User).filter(User.phone == phone).first()
 
+    # Garante que a conta existe (estilo USSD: auto-criação)
+    user = db.query(User).filter(User.phone == phone).first()
     if not user:
         user = User(
             phone=phone,
             balance=0.0,
             kyc_level=0,
-            pin_hash=hash_password(DEFAULT_PIN),
             is_active=True,
+            pin_hash=hash_password(DEFAULT_PIN),
             agent_float=0.0,
         )
         db.add(user)
         db.commit()
 
-    # 🚀 ORDEM CORRETA
-    send_otp(phone, db)
+    create_or_update_otp(db, phone)
+    return {"ok": True, "message": "OTP enviado"}
 
-    return {"sent": True}
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     phone = normalize_phone(payload.phone)
-    otp = payload.otp.strip()
 
-    record = (
-        db.query(OTP)
-        .filter(OTP.phone == phone, OTP.code == otp, OTP.consumed == False)
-        .order_by(OTP.id.desc())
-        .first()
-    )
+    ok, message = verify_otp(db, phone, payload.otp)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
 
-    if not record or record.expires_at < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="OTP inválido ou expirado")
+    user = db.query(User).filter(User.phone == phone).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Usuário não encontrado.")
 
-    record.consumed = True
-    db.commit()
+    # Primeiro login (ou legacy sem PIN): define PIN
+    if not user.pin_hash:
+        user.pin_hash = hash_password(payload.pin)
+        db.add(user)
+        db.commit()
+    else:
+        if not verify_password(payload.pin, user.pin_hash):
+            raise HTTPException(status_code=400, detail="PIN incorreto.")
 
     token = create_access_token(subject=phone)
     return TokenResponse(token=token)
