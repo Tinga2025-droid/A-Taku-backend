@@ -45,7 +45,9 @@ def request_otp(payload: OTPRequest, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
 
-    send_otp(db, phone)
+    # 🚀 ORDEM CORRETA
+    send_otp(phone, db)
+
     return {"sent": True}
 
 @router.post("/login", response_model=TokenResponse)
