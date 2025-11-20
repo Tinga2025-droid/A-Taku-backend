@@ -3,17 +3,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from ..database import get_db, Base, engine
-from ..models import User, OTP
-from ..schemas import OTPRequest, LoginRequest, TokenResponse
-from ..otp_provider import send_otp
-from ..auth import create_access_token, hash_password
+from app.database import get_db, Base, engine
+from app.models import User, OTP
+from app.schemas import OTPRequest, LoginRequest, TokenResponse
+from app.otp_provider import send_otp
+from app.auth import create_access_token, hash_password
 
 Base.metadata.create_all(bind=engine)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-DEFAULT_PIN = "0000"  # alinhado com USSD
+DEFAULT_PIN = "0000"
 
 def normalize_phone(p: str) -> str:
     p = p.strip().replace(" ", "")
