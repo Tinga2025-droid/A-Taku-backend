@@ -20,7 +20,7 @@ def normalize_phone(p: str) -> str:
     if p.startswith("00"):
         p = "+" + p[2:]
     if not p.startswith("+"):
-        if p.startswith(("84", "85", "86", "82")):
+        if p.startswith(("84", "85", "86", "87", "83", "82")):
             p = "+258" + p
         elif p.startswith("258"):
             p = "+" + p
