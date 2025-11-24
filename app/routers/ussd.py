@@ -162,22 +162,36 @@ def ussd_callback(
     # 4) TRANSFERIR (core bancário)
     # ╚═══════════════════════════╝
     if parts[0] == "4":
+         # 1º passo: pedir PIN
         if len(parts) == 1:
             return con("Digite PIN:")
+
+        # 2º passo: validar PIN e pedir número destino
         if len(parts) == 2:
             pin = parts[1]
             if not verify_password(pin, user.pin_hash):
                 return end("PIN inválido.")
             return con("Digite número do destinatário:")
+
+        # 3º passo: pedir valor
         if len(parts) == 3:
             return con("Digite o valor:")
+
+        # 4º passo: executar transferência
         if len(parts) == 4:
+            pin = parts[1]  # ✅ RECAPTURA O PIN A PARTIR DO TEXTO COMPLETO
+            if not verify_password(pin, user.pin_hash):
+                return end("PIN inválido.")
+
             recipient = normalize_phone(parts[2])
-            amount = int(parts[3])
+
+            try:
+                amount = int(parts[3])
+            except ValueError:
+                return end("Valor inválido.")
 
             ok, msg = make_transfer(db, user.phone, recipient, amount, pin)
             return end(msg)
-
 
     # ╔═══════════════════════════╗
     # 5) CASHOUT (com taxas)
