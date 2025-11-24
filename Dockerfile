@@ -1,19 +1,19 @@
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
-ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Copia apenas requirements primeiro
+RUN apt-get update && apt-get install -y \
+    gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+# Copia tudo o restante
+COPY . .
 
-# Copia somente o necessário
-COPY app ./app
-COPY render.yaml .
-COPY .env.example .
+EXPOSE 8080
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
