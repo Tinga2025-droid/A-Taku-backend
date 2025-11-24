@@ -25,7 +25,10 @@ class AuditLog(Base):
     user_id = Column(Integer, nullable=True)
     action = Column(String)
     amount = Column(Float, nullable=True)
-    metadata = Column(String)
+
+    # Campo correto e seguro
+    extra_data = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

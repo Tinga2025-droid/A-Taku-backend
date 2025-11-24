@@ -1,5 +1,4 @@
 ﻿from datetime import datetime
-
 from sqlalchemy.orm import Session
 
 from .models_advanced import AuditLog
@@ -17,7 +16,7 @@ def audit_log(
         user_id=user_id,
         action=action,
         amount=amount,
-        metadata=metadata,
+        extra_data=metadata,  # 🔥 nome igual ao models_advanced
         created_at=datetime.utcnow(),
     )
     db.add(entry)
