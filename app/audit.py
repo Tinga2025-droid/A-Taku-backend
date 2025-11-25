@@ -1,4 +1,5 @@
-﻿from datetime import datetime
+﻿# app/audit.py
+from datetime import datetime
 from sqlalchemy.orm import Session
 
 from .models_advanced import AuditLog
@@ -11,12 +12,15 @@ def audit_log(
     amount: float | None = None,
     metadata: str | None = None,
 ) -> None:
-    """Registo centralizado de auditoria (transações, falhas de PIN, etc.)."""
+    """
+    Registo centralizado de auditoria (transações, falhas de PIN, etc.).
+    extra_data na tabela = metadata aqui.
+    """
     entry = AuditLog(
         user_id=user_id,
         action=action,
         amount=amount,
-        extra_data=metadata,  # 🔥 nome igual ao models_advanced
+        extra_data=metadata,
         created_at=datetime.utcnow(),
     )
     db.add(entry)

@@ -6,12 +6,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from ..database import get_db
-from ..models import User, Tx, TxType, FeesConfig
+from ..models import User, Tx, TxType
 from ..utils import normalize_phone
 from ..auth import verify_password, hash_password
-from ..wallet_advanced import make_transfer
-from ..audit import audit_log
-
+from ..wallet_advanced import make_transfer, calc_cashout_fee
 
 router = APIRouter(tags=["USSD"])
 
@@ -53,6 +51,7 @@ def get_or_create_user(db: Session, phone: str) -> User:
     db.commit()
     db.refresh(user)
 
+    # bônus inicial
     tx = Tx(
         ref=f"BONUS-{int(datetime.utcnow().timestamp())}-{user.id}",
         type=TxType.DEPOSIT,
@@ -102,7 +101,12 @@ def ussd_callback(
     text: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
-    phone = normalize_phone(phoneNumber)
+    # normalizar número, mas sem rebentar 500
+    try:
+        phone = normalize_phone(phoneNumber)
+    except Exception:
+        return end("Telefone inválido ou não suportado.")
+
     user = get_or_create_user(db, phone)
 
     parts = [p for p in text.split("*") if p] if text else []
@@ -173,18 +177,21 @@ def ussd_callback(
             if not verify_password(pin, user.pin_hash):
                 return end("PIN inválido.")
 
-            recipient = normalize_phone(parts[2])
+            try:
+                recipient = normalize_phone(parts[2])
+            except Exception:
+                return end("Telefone destino inválido.")
 
             try:
                 amount = float(parts[3].strip())
-            except:
+            except Exception:
                 return end("Valor inválido.")
 
             ok, msg = make_transfer(db, user.phone, recipient, amount, pin)
             return end(msg)
 
     # ---------------------------
-    # 5) CASHOUT
+    # 5) CASHOUT (com faixas fixas)
     # ---------------------------
     if parts[0] == "5":
         if len(parts) == 1:
@@ -199,19 +206,23 @@ def ussd_callback(
         if len(parts) == 3:
             try:
                 amount = float(parts[2].strip())
-            except:
+            except ValueError:
                 return end("Valor inválido.")
 
-            cfg = db.query(FeesConfig).first()
-            fee = amount * (cfg.cashout_fee_pct / 100.0)
+            fee = calc_cashout_fee(amount)
+            if fee is None:
+                return end("Valor fora das faixas permitidas.")
+
             total = amount + fee
 
             if user.balance < total:
                 return end("Saldo insuficiente.")
 
+            # debitar
             user.balance -= total
             db.commit()
 
+            # registar TX
             tx = Tx(
                 ref=f"CASH-{int(datetime.utcnow().timestamp())}-{user.id}",
                 type=TxType.CASHOUT,
@@ -243,7 +254,7 @@ def ussd_callback(
 
             try:
                 amount = float(parts[3].strip())
-            except:
+            except Exception:
                 return end("Valor inválido.")
 
             if user.balance < amount:
@@ -252,7 +263,20 @@ def ussd_callback(
             user.balance -= amount
             db.commit()
 
-            return end(f"Pagamento OK. Saldo: {user.balance:.2f}")
+            # opcional: registar TX de pagamento
+            tx = Tx(
+                ref=f"PAY-{int(datetime.utcnow().timestamp())}-{user.id}",
+                type=TxType.TRANSFER,
+                from_user_id=user.id,
+                to_user_id=None,
+                amount=amount,
+                meta=f"Pagamento servico ref={ref}",
+                status="OK",
+            )
+            db.add(tx)
+            db.commit()
+
+            return end(f"Pagamento OK. Saldo: {user.balance:.2f} MZN")
 
     # ---------------------------
     # 7) EXTRATO
@@ -287,7 +311,7 @@ def ussd_callback(
         if len(parts) == 2:
             try:
                 amount = float(parts[1].strip())
-            except:
+            except Exception:
                 return end("Valor inválido.")
 
             if amount < AIRTIME_MIN:

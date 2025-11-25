@@ -1,3 +1,4 @@
+# app/routers/agent.py
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -9,6 +10,7 @@ from ..models import User, Role, Tx, TxType, FeesConfig
 from ..schemas import AgentLoginRequest, DepositRequest, CashoutRequest
 from ..auth import create_access_token, verify_password, hash_password, decode_token
 from ..utils import normalize_phone
+from ..wallet_advanced import calc_cashout_fee
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -16,7 +18,11 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 @router.post("/login")
 def login_agent(payload: AgentLoginRequest, db: Session = Depends(get_db)):
     phone = normalize_phone(payload.phone)
-    agent = db.query(User).filter(User.phone == phone, User.role == Role.AGENT).first()
+    agent = (
+        db.query(User)
+        .filter(User.phone == phone, User.role == Role.AGENT)
+        .first()
+    )
     if not agent or not agent.pin_hash or not verify_password(payload.pin, agent.pin_hash):
         raise HTTPException(401, detail="Credenciais inválidas")
     return {"token": create_access_token(subject=phone)}
@@ -52,7 +58,11 @@ async def deposit(
         raise HTTPException(401, detail="Missing token")
 
     agent_phone = decode_token(authorization.split(" ", 1)[1])
-    agent = db.query(User).filter(User.phone == agent_phone, User.role == Role.AGENT).first()
+    agent = (
+        db.query(User)
+        .filter(User.phone == agent_phone, User.role == Role.AGENT)
+        .first()
+    )
     if not agent:
         raise HTTPException(401, detail="Agente inválido")
 
@@ -104,11 +114,19 @@ async def cashout(
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
 ):
+    """
+    Cashout via agente, usando as MESMAS faixas de taxa do USSD (calc_cashout_fee),
+    mas dividindo a taxa entre dono da plataforma e agente com base no fee_owner_pct.
+    """
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, detail="Missing token")
 
     agent_phone = decode_token(authorization.split(" ", 1)[1])
-    agent = db.query(User).filter(User.phone == agent_phone, User.role == Role.AGENT).first()
+    agent = (
+        db.query(User)
+        .filter(User.phone == agent_phone, User.role == Role.AGENT)
+        .first()
+    )
     if not agent:
         raise HTTPException(401, detail="Agente inválido")
 
@@ -121,6 +139,7 @@ async def cashout(
     if amount <= 0:
         raise HTTPException(400, detail="Valor inválido")
 
+    # pegar config (usada só para split da taxa)
     cfg = db.query(FeesConfig).get(1)
     if not cfg:
         cfg = FeesConfig(id=1)
@@ -128,23 +147,30 @@ async def cashout(
         db.commit()
         db.refresh(cfg)
 
-    fee_raw = amount * (cfg.cashout_fee_pct / 100.0)
-    fee_capped = max(cfg.cashout_fee_min, min(fee_raw, cfg.cashout_fee_max))
-    total_debit = amount + fee_capped
+    fee = calc_cashout_fee(amount)
+    if fee is None:
+        raise HTTPException(400, detail="Valor fora das faixas permitidas para cashout")
+
+    total_debit = amount + fee
 
     if customer.balance < total_debit:
-        raise HTTPException(402, detail="Saldo do cliente insuficiente (valor + taxa)")
+        raise HTTPException(
+            402, detail="Saldo do cliente insuficiente (valor + taxa)"
+        )
 
     ref = payload.idempotency_key or f"CSO-{agent.id}-{customer.id}-{amount}"
     if db.query(Tx).filter(Tx.ref == ref).first():
         return {"ok": True, "ref": ref}
 
     try:
+        # debitar cliente (valor + taxa)
         customer.balance -= total_debit
+        # agente recebe apenas o valor (sem taxa)
         agent.agent_float += amount
 
-        owner_part = fee_capped * (cfg.fee_owner_pct / 100.0)
-        agent_part = fee_capped - owner_part
+        # split da taxa: dono / agente
+        owner_part = fee * (cfg.fee_owner_pct / 100.0)
+        agent_part = fee - owner_part
 
         tx_main = Tx(
             ref=ref,
@@ -186,7 +212,7 @@ async def cashout(
     return {
         "ok": True,
         "ref": ref,
-        "fee": fee_capped,
+        "fee": fee,
         "split": {"owner": owner_part, "agent": agent_part},
         "customer_balance": customer.balance,
     }

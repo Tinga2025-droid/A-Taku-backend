@@ -1,4 +1,5 @@
-﻿from datetime import datetime
+﻿# app/models_advanced.py
+from datetime import datetime
 
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
 
@@ -26,7 +27,7 @@ class AuditLog(Base):
     action = Column(String)
     amount = Column(Float, nullable=True)
 
-    # Campo correto e seguro
+    # campo certo, usado pelo audit.py
     extra_data = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
