@@ -1,4 +1,4 @@
-# app/routers/ussd.py (VERSÃO PROFISSIONAL)
+# app/routers/ussd.py (VERSÃO PROFISSIONAL CORRIGIDA)
 
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import PlainTextResponse
@@ -27,6 +27,7 @@ AIRTIME_MIN = 20
 def end(text: str) -> str:
     return f"END {text}"
 
+
 def con(text: str) -> str:
     return f"CON {text}"
 
@@ -47,12 +48,11 @@ def get_or_create_user(db: Session, phone: str) -> User:
         agent_float=0.0,
         pin_hash=hash_password(DEFAULT_PIN),
     )
-    
+
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    # Registrar transação de bônus inicial
     tx = Tx(
         ref=f"BONUS-{int(datetime.utcnow().timestamp())}-{user.id}",
         type=TxType.DEPOSIT,
@@ -102,20 +102,17 @@ def ussd_callback(
     text: str = Form(default=""),
     db: Session = Depends(get_db),
 ):
-    # Normalizar número
     phone = normalize_phone(phoneNumber)
     user = get_or_create_user(db, phone)
 
     parts = [p for p in text.split("*") if p] if text else []
 
-    # Entrada
     if not parts:
         return main_menu()
 
-
-    # ╔═══════════════════════════╗
+    # ---------------------------
     # 1) CRIAR CONTA
-    # ╚═══════════════════════════╝
+    # ---------------------------
     if parts[0] == "1":
         if require_pin_change(user):
             if len(parts) == 1:
@@ -129,10 +126,9 @@ def ussd_callback(
                 return end("Conta ativada com sucesso.")
         return end("Conta já existe. Use Entrar.")
 
-
-    # ╔═══════════════════════════╗
-    # 2) LOGIN / TROCA DE PIN
-    # ╚═══════════════════════════╝
+    # ---------------------------
+    # 2) LOGIN
+    # ---------------------------
     if parts[0] == "2":
         if require_pin_change(user):
             return con("Defina novo PIN:")
@@ -144,10 +140,9 @@ def ussd_callback(
                 return end("PIN inválido.")
             return end(f"Login OK. Saldo: {user.balance:.2f} MZN")
 
-
-    # ╔═══════════════════════════╗
+    # ---------------------------
     # 3) SALDO
-    # ╚═══════════════════════════╝
+    # ---------------------------
     if parts[0] == "3":
         if len(parts) == 1:
             return con("Digite PIN:")
@@ -157,55 +152,55 @@ def ussd_callback(
                 return end("PIN inválido.")
             return end(f"Saldo atual: {user.balance:.2f} MZN")
 
-
-    # ╔═══════════════════════════╗
-    # 4) TRANSFERIR (core bancário)
-    # ╚═══════════════════════════╝
+    # ---------------------------
+    # 4) TRANSFERÊNCIA
+    # ---------------------------
     if parts[0] == "4":
-         # 1º passo: pedir PIN
         if len(parts) == 1:
             return con("Digite PIN:")
 
-        # 2º passo: validar PIN e pedir número destino
         if len(parts) == 2:
             pin = parts[1]
             if not verify_password(pin, user.pin_hash):
                 return end("PIN inválido.")
             return con("Digite número do destinatário:")
 
-        # 3º passo: pedir valor
         if len(parts) == 3:
             return con("Digite o valor:")
 
-        # 4º passo: executar transferência
         if len(parts) == 4:
-            pin = parts[1]  # ✅ RECAPTURA O PIN A PARTIR DO TEXTO COMPLETO
+            pin = parts[1]
             if not verify_password(pin, user.pin_hash):
                 return end("PIN inválido.")
 
             recipient = normalize_phone(parts[2])
 
             try:
-                amount = int(parts[3])
-            except ValueError:
+                amount = float(parts[3].strip())
+            except:
                 return end("Valor inválido.")
 
             ok, msg = make_transfer(db, user.phone, recipient, amount, pin)
             return end(msg)
 
-    # ╔═══════════════════════════╗
-    # 5) CASHOUT (com taxas)
-    # ╚═══════════════════════════╝
+    # ---------------------------
+    # 5) CASHOUT
+    # ---------------------------
     if parts[0] == "5":
         if len(parts) == 1:
             return con("Digite PIN:")
+
         if len(parts) == 2:
             pin = parts[1]
             if not verify_password(pin, user.pin_hash):
                 return end("PIN inválido.")
             return con("Digite valor a levantar:")
+
         if len(parts) == 3:
-            amount = int(parts[2])
+            try:
+                amount = float(parts[2].strip())
+            except:
+                return end("Valor inválido.")
 
             cfg = db.query(FeesConfig).first()
             fee = amount * (cfg.cashout_fee_pct / 100.0)
@@ -217,12 +212,24 @@ def ussd_callback(
             user.balance -= total
             db.commit()
 
-            return end(f"Levantou {amount} MZN. Taxa: {fee:.2f}. Saldo: {user.balance:.2f}")
+            tx = Tx(
+                ref=f"CASH-{int(datetime.utcnow().timestamp())}-{user.id}",
+                type=TxType.CASHOUT,
+                from_user_id=user.id,
+                amount=amount,
+                meta=f"Taxa={fee:.2f}",
+                status="OK",
+            )
+            db.add(tx)
+            db.commit()
 
+            return end(
+                f"Levantou {amount:.2f} MZN. Taxa: {fee:.2f}. Saldo: {user.balance:.2f}"
+            )
 
-    # ╔═══════════════════════════╗
-    # 6) PAGAMENTOS
-    # ╚═══════════════════════════╝
+    # ---------------------------
+    # 6) PAGAR SERVIÇOS
+    # ---------------------------
     if parts[0] == "6":
         if len(parts) == 1:
             return con("Digite PIN:")
@@ -230,9 +237,14 @@ def ussd_callback(
             return con("Digite referência do serviço:")
         if len(parts) == 3:
             return con("Digite o valor:")
+
         if len(parts) == 4:
             ref = parts[2]
-            amount = int(parts[3])
+
+            try:
+                amount = float(parts[3].strip())
+            except:
+                return end("Valor inválido.")
 
             if user.balance < amount:
                 return end("Saldo insuficiente.")
@@ -242,10 +254,9 @@ def ussd_callback(
 
             return end(f"Pagamento OK. Saldo: {user.balance:.2f}")
 
-
-    # ╔═══════════════════════════╗
+    # ---------------------------
     # 7) EXTRATO
-    # ╚═══════════════════════════╝
+    # ---------------------------
     if parts[0] == "7":
         txs = (
             db.query(Tx)
@@ -266,22 +277,28 @@ def ussd_callback(
 
         return end("\n".join(lines))
 
-
-    # ╔═══════════════════════════╗
+    # ---------------------------
     # 8) AIRTIME
-    # ╚═══════════════════════════╝
+    # ---------------------------
     if parts[0] == "8":
         if len(parts) == 1:
             return con(f"Digite valor mínimo {AIRTIME_MIN}:")
+
         if len(parts) == 2:
-            amount = int(parts[1])
+            try:
+                amount = float(parts[1].strip())
+            except:
+                return end("Valor inválido.")
+
             if amount < AIRTIME_MIN:
                 return end(f"Valor mínimo é {AIRTIME_MIN}.")
+
             if user.balance < amount:
                 return end("Saldo insuficiente.")
+
             user.balance -= amount
             db.commit()
-            return end(f"Crédito comprado: {amount} MZN")
 
+            return end(f"Crédito comprado: {amount:.2f} MZN")
 
     return main_menu()
