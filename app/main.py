@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import OperationalError
+from time import sleep
 
-from .database import Base, engine
+from .database import Base, engine, SessionLocal, ensure_admin_exists
 from .routers import auth, auth_otp, wallet, agent, admin, ussd
+
 
 app = FastAPI(
     title="A-Taku API",
@@ -10,20 +13,29 @@ app = FastAPI(
     description="Sistema de carteira digital A-Taku — transfers, cashout, agentes, OTP e USSD"
 )
 
-# ------------------------------
-# 📌 Setup inicial da base de dados
-# ------------------------------
-@app.on_event("startup")
-def init_db():
-    Base.metadata.create_all(bind=engine)
 
-from .database import SessionLocal, ensure_admin_exists
-db = SessionLocal()
-ensure_admin_exists(db)
-db.close()
-# ------------------------------
-# 🔧 CORS
-# ------------------------------
+def safe_init_db():
+    retries = 6
+    for attempt in range(retries):
+        try:
+            Base.metadata.create_all(bind=engine)
+            db = SessionLocal()
+            ensure_admin_exists(db)
+            db.close()
+            print("[INIT] Banco criado com sucesso.")
+            return
+        except OperationalError:
+            print(f"[INIT] Postgres não está pronto. Tentativa {attempt+1}/{retries}…")
+            sleep(3)
+
+    raise RuntimeError("Falha ao conectar ao Postgres após várias tentativas.")
+
+
+@app.on_event("startup")
+def on_startup():
+    safe_init_db()
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,9 +44,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ------------------------------
-# 📌 Routers
-# ------------------------------
 app.include_router(auth.router)
 app.include_router(auth_otp.router)
 app.include_router(wallet.router)
@@ -42,9 +51,7 @@ app.include_router(agent.router)
 app.include_router(admin.router)
 app.include_router(ussd.router)
 
-# ------------------------------
-# 🔍 Rotas públicas
-# ------------------------------
+
 @app.get("/")
 def root():
     return {
@@ -55,10 +62,11 @@ def root():
         "status": "running"
     }
 
+
 @app.head("/")
 def head_root():
-    """Necessário para Render não retornar 405 e reiniciar o serviço"""
     return {}
+
 
 @app.get("/healthz")
 def health_check():
