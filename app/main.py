@@ -17,6 +17,10 @@ app = FastAPI(
 def init_db():
     Base.metadata.create_all(bind=engine)
 
+from .database import SessionLocal, ensure_admin_exists
+db = SessionLocal()
+ensure_admin_exists(db)
+db.close()
 # ------------------------------
 # 🔧 CORS
 # ------------------------------
