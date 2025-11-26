@@ -12,17 +12,21 @@ from sqlalchemy import (
     Boolean,
     Enum as SAEnum,
 )
-from sqlalchemy.orm import declarative_base
-
-Base = declarative_base()
+from .database import Base
 
 
+# ---------------------------------------
+# ROLES DO SISTEMA
+# ---------------------------------------
 class Role(str, Enum):
     USER = "USER"
     AGENT = "AGENT"
     ADMIN = "ADMIN"
 
 
+# ---------------------------------------
+# UTILIZADORES
+# ---------------------------------------
 class User(Base):
     __tablename__ = "users"
 
@@ -41,13 +45,18 @@ class User(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Segurança
     pin_fail_count = Column(Integer, default=0)
     pin_lock_until = Column(DateTime, nullable=True)
 
+    # Anti-fraude / abuse
     last_tx_at = Column(DateTime, nullable=True)
     tx_rate_count = Column(Integer, default=0)
 
 
+# ---------------------------------------
+# AGENTES
+# ---------------------------------------
 class Agent(Base):
     __tablename__ = "agents"
 
@@ -55,9 +64,13 @@ class Agent(Base):
     phone = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=True)
     agent_code = Column(String, unique=True, index=True, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+# ---------------------------------------
+# TIPOS DE TRANSAÇÕES
+# ---------------------------------------
 class TxType(str, Enum):
     TRANSFER = "TRANSFER"
     DEPOSIT = "DEPOSIT"
@@ -65,11 +78,15 @@ class TxType(str, Enum):
     COMMISSION = "COMMISSION"
 
 
+# ---------------------------------------
+# TRANSAÇÕES
+# ---------------------------------------
 class Tx(Base):
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True, index=True)
     ref = Column(String, unique=True, index=True)
+
     type = Column(SAEnum(TxType), default=TxType.TRANSFER, nullable=False)
 
     from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -79,24 +96,36 @@ class Tx(Base):
     meta = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # OK, FAIL, PENDING
     status = Column(String, default="OK")
 
 
+# ---------------------------------------
+# OTP (Código de verificação)
+# ---------------------------------------
 class OTP(Base):
     __tablename__ = "otps"
 
     id = Column(Integer, primary_key=True, index=True)
     phone = Column(String, index=True, nullable=False)
     code = Column(String, nullable=False)
+
     expires_at = Column(DateTime, nullable=False)
     consumed = Column(Boolean, default=False)
 
 
+# ---------------------------------------
+# CONFIGURAÇÃO DE TAXAS
+# ---------------------------------------
 class FeesConfig(Base):
     __tablename__ = "fees_config"
 
     id = Column(Integer, primary_key=True, default=1)
+
     cashout_fee_pct = Column(Float, default=float(os.getenv("CASHOUT_FEE_PCT", 1.5)))
     cashout_fee_min = Column(Float, default=float(os.getenv("CASHOUT_FEE_MIN", 5)))
     cashout_fee_max = Column(Float, default=float(os.getenv("CASHOUT_FEE_MAX", 150)))
+
+    # Percentagem do proprietário A-Taku
     fee_owner_pct = Column(Float, default=float(os.getenv("FEE_OWNER_PCT", 60)))
