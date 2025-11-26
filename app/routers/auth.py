@@ -6,7 +6,7 @@ from ..models import User
 from ..schemas import OTPRequest, LoginRequest, TokenResponse
 from ..otp_provider import create_or_update_otp, verify_otp
 from ..auth import create_access_token, hash_password, verify_password
-from ..utils import normalize_phone
+from ..utils import normalize_phone, is_locked, register_failed_pin, reset_pin_fail
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -17,7 +17,6 @@ DEFAULT_PIN = "0000"
 def request_otp(payload: OTPRequest, db: Session = Depends(get_db)):
     phone = normalize_phone(payload.phone)
 
-    # Garante que a conta existe (estilo USSD: auto-criação)
     user = db.query(User).filter(User.phone == phone).first()
     if not user:
         user = User(
@@ -47,14 +46,25 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=400, detail="Usuário não encontrado.")
 
-    # Primeiro login (ou legacy sem PIN): define PIN
+    if is_locked(user):
+        raise HTTPException(status_code=400, detail="Conta temporariamente bloqueada. Tente mais tarde.")
+
     if not user.pin_hash:
         user.pin_hash = hash_password(payload.pin)
-        db.add(user)
+        reset_pin_fail(user)
         db.commit()
     else:
         if not verify_password(payload.pin, user.pin_hash):
+            status = register_failed_pin(user)
+            db.commit()
+
+            if status == "LOCKED":
+                raise HTTPException(status_code=400, detail="PIN incorreto 3 vezes. Conta bloqueada por 5 minutos.")
+
             raise HTTPException(status_code=400, detail="PIN incorreto.")
+
+        reset_pin_fail(user)
+        db.commit()
 
     token = create_access_token(subject=phone)
     return TokenResponse(token=token)

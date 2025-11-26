@@ -1,8 +1,7 @@
+from datetime import datetime, timedelta
+import random
 import phonenumbers
 from sqlalchemy.orm import Session
-from datetime import datetime
-import random
-
 from .models import Agent
 
 
@@ -47,3 +46,36 @@ def generate_txid():
     now = datetime.utcnow()
     rand = random.randint(100000, 999999)
     return f"TX-{now.strftime('%Y%m%d')}-{rand}"
+
+
+def is_locked(user):
+    if user.pin_lock_until and user.pin_lock_until > datetime.utcnow():
+        return True
+    return False
+
+
+def register_failed_pin(user):
+    from app.database import SessionLocal
+    db = SessionLocal()
+
+    user.pin_fail_count += 1
+
+    if user.pin_fail_count >= 3:
+        user.pin_lock_until = datetime.utcnow() + timedelta(minutes=5)
+        user.pin_fail_count = 0
+        db.commit()
+        db.close()
+        return "LOCKED"
+
+    db.commit()
+    db.close()
+    return "FAIL"
+
+
+def reset_pin_fail(user):
+    from app.database import SessionLocal
+    db = SessionLocal()
+    user.pin_fail_count = 0
+    user.pin_lock_until = None
+    db.commit()
+    db.close()

@@ -12,9 +12,9 @@ from sqlalchemy import (
     Boolean,
     Enum as SAEnum,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base
 
-from .database import Base
+Base = declarative_base()
 
 
 class Role(str, Enum):
@@ -29,13 +29,23 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     phone = Column(String, unique=True, index=True, nullable=False)
     full_name = Column(String, nullable=True)
+
     kyc_level = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+
     balance = Column(Float, default=0.0)
     agent_float = Column(Float, default=0.0)
+
     role = Column(SAEnum(Role), default=Role.USER, nullable=False)
     pin_hash = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    pin_fail_count = Column(Integer, default=0)
+    pin_lock_until = Column(DateTime, nullable=True)
+
+    last_tx_at = Column(DateTime, nullable=True)
+    tx_rate_count = Column(Integer, default=0)
 
 
 class Agent(Base):
@@ -61,10 +71,13 @@ class Tx(Base):
     id = Column(Integer, primary_key=True, index=True)
     ref = Column(String, unique=True, index=True)
     type = Column(SAEnum(TxType), default=TxType.TRANSFER, nullable=False)
+
     from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
     amount = Column(Float, nullable=False)
     meta = Column(String, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default="OK")
 

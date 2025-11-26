@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+﻿from datetime import datetime, timedelta
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,24 @@ def display_name(user: User):
     if user.full_name and user.full_name.strip():
         return user.full_name
     return f"Conta não registada ({user.phone})"
+
+
+def anti_fraude(user: User, amount: float):
+    limits = {0: 500, 1: 2000, 2: 10000}
+    if amount > limits.get(user.kyc_level, 500):
+        return "LIMITE_KYC"
+
+    now = datetime.utcnow()
+    if user.last_tx_at and (now - user.last_tx_at).seconds < 5:
+        user.tx_rate_count += 1
+    else:
+        user.tx_rate_count = 0
+
+    if user.tx_rate_count >= 5:
+        return "RAPIDEZ"
+
+    user.last_tx_at = now
+    return "OK"
 
 
 def make_transfer(
@@ -88,6 +106,14 @@ def make_transfer(
         if sender.balance < amount:
             audit_log(db, sender.id, "transfer_fail_saldo", amount=amount)
             return False, "Saldo insuficiente."
+
+        fraude = anti_fraude(sender, amount)
+
+        if fraude == "LIMITE_KYC":
+            return False, "Operação acima do limite permitido pelo seu KYC."
+
+        if fraude == "RAPIDEZ":
+            return False, "Muitas operações em sequência. Tente novamente mais tarde."
 
         sender.balance -= amount
         receiver.balance += amount
