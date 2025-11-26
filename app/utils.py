@@ -1,18 +1,14 @@
 import phonenumbers
+from sqlalchemy.orm import Session
+from datetime import datetime
+import random
+
+from .models import Agent
 
 
 def normalize_phone(raw: str, default_region: str = "MZ") -> str:
-    """
-    Normaliza números para formato E.164.
-
-    Exemplos:
-    - "849001234"      -> "+258849001234"
-    - "+258849001234"  -> "+258849001234"
-    - "00258849001234" -> "+258849001234"
-    """
     raw = (raw or "").strip()
 
-    # Tentativa principal com phonenumbers
     try:
         num = phonenumbers.parse(raw, default_region)
         if phonenumbers.is_valid_number(num):
@@ -20,12 +16,10 @@ def normalize_phone(raw: str, default_region: str = "MZ") -> str:
     except Exception:
         pass
 
-    # Fallback: apenas dígitos
     digits = "".join(ch for ch in raw if ch.isdigit())
     if not digits:
         raise ValueError("Telefone inválido")
 
-    # Formatos comuns em Moçambique
     if digits.startswith("258"):
         candidate = "+" + digits
     elif len(digits) == 9 and digits.startswith(("82", "83", "84", "85", "86", "87")):
@@ -41,3 +35,15 @@ def normalize_phone(raw: str, default_region: str = "MZ") -> str:
         pass
 
     raise ValueError("Telefone inválido ou não suportado")
+
+
+def generate_agent_code(db: Session):
+    last = db.query(Agent).order_by(Agent.id.desc()).first()
+    next_id = (last.id + 1) if last else 1
+    return f"AG{next_id:04d}"
+
+
+def generate_txid():
+    now = datetime.utcnow()
+    rand = random.randint(100000, 999999)
+    return f"TX-{now.strftime('%Y%m%d')}-{rand}"

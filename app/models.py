@@ -28,12 +28,23 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     phone = Column(String, unique=True, index=True, nullable=False)
+    full_name = Column(String, nullable=True)
     kyc_level = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
-    balance = Column(Float, default=0.0)       # saldo wallet
-    agent_float = Column(Float, default=0.0)   # e-float para agentes
+    balance = Column(Float, default=0.0)
+    agent_float = Column(Float, default=0.0)
     role = Column(SAEnum(Role), default=Role.USER, nullable=False)
     pin_hash = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Agent(Base):
+    __tablename__ = "agents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    phone = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=True)
+    agent_code = Column(String, unique=True, index=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -53,7 +64,7 @@ class Tx(Base):
     from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     amount = Column(Float, nullable=False)
-    meta = Column(String, nullable=True)  # JSON leve
+    meta = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default="OK")
 
