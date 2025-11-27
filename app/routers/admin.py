@@ -1,11 +1,11 @@
 # app/routers/admin.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import FeesConfig, User
+from ..models import FeesConfig, User, Role
 from ..schemas import FeesPayload
-from ..auth import verify_password
+from ..auth import verify_password, hash_password
 from ..utils import normalize_phone
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -16,7 +16,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # -----------------------------
 def ensure_admin(db: Session, phone: str, pin: str):
     phone = normalize_phone(phone)
-    admin = db.query(User).filter(User.phone == phone, User.role == "ADMIN").first()
+    admin = db.query(User).filter(
+        User.phone == phone,
+        User.role == Role.ADMIN
+    ).first()
 
     if not admin or not verify_password(pin, admin.pin_hash):
         raise HTTPException(status_code=403, detail="Acesso negado: não é ADMIN")
@@ -28,15 +31,7 @@ def ensure_admin(db: Session, phone: str, pin: str):
 # ⚙️ 1. DEFINIR TAXAS
 # -----------------------------
 @router.post("/fees")
-def set_fees(
-    payload: FeesPayload,
-    db: Session = Depends(get_db),
-):
-    """
-    Configura parâmetros de taxa.
-    - fee_owner_pct → % da taxa que vai para o dono
-    - o restante vai para o agente
-    """
+def set_fees(payload: FeesPayload, db: Session = Depends(get_db)):
     cfg = db.query(FeesConfig).get(1)
     if not cfg:
         cfg = FeesConfig(id=1)
@@ -56,39 +51,36 @@ def set_fees(
 # -----------------------------
 @router.post("/agent/create")
 def create_agent(
-    phone: str,
-    full_name: str,
-    pin: str,
-    agent_code: str,
-    admin_phone: str,
-    admin_pin: str,
+    phone: str = Query(...),
+    full_name: str = Query(...),
+    pin: str = Query(...),
+    agent_code: str = Query(...),
+    admin_phone: str = Query(...),
+    admin_pin: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    """
-    ADMIN cria um agente.
-    """
     ensure_admin(db, admin_phone, admin_pin)
 
     phone = normalize_phone(phone)
 
-    user = db.query(User).filter(User.phone == phone).first()
-    if user:
+    if db.query(User).filter(User.phone == phone).first():
         raise HTTPException(status_code=400, detail="Usuário já existe")
 
     new_agent = User(
         phone=phone,
         full_name=full_name,
-        role="AGENT",
+        role=Role.AGENT,
         agent_code=agent_code,
         is_active=True,
         balance=0.0,
         agent_float=0.0,
-        pin_hash=verify_password(pin, pin),  # será corrigido no schemas
+        pin_hash=hash_password(pin),
     )
 
     db.add(new_agent)
     db.commit()
-    return {"ok": True, "agent": phone}
+
+    return {"ok": True, "created_agent": phone}
 
 
 # -----------------------------
@@ -96,26 +88,26 @@ def create_agent(
 # -----------------------------
 @router.post("/agent/set-float")
 def set_agent_float(
-    phone: str,
-    amount: float,
-    admin_phone: str,
-    admin_pin: str,
+    phone: str = Query(...),
+    amount: float = Query(...),
+    admin_phone: str = Query(...),
+    admin_pin: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    """
-    ADMIN define o float do agente.
-    """
     ensure_admin(db, admin_phone, admin_pin)
 
     phone = normalize_phone(phone)
-    agent = db.query(User).filter(User.phone == phone, User.role == "AGENT").first()
+
+    agent = db.query(User).filter(
+        User.phone == phone,
+        User.role == Role.AGENT
+    ).first()
 
     if not agent:
         raise HTTPException(status_code=404, detail="Agente não encontrado")
 
     agent.agent_float = amount
     db.commit()
-
     return {"ok": True, "new_float": amount}
 
 
@@ -124,14 +116,8 @@ def set_agent_float(
 # -----------------------------
 @router.get("/status")
 def admin_status(db: Session = Depends(get_db)):
-    """
-    Retorna estado básico do sistema:
-    - número de usuários
-    - agentes
-    - taxa configurada
-    """
     users = db.query(User).count()
-    agents = db.query(User).filter(User.role == "AGENT").count()
+    agents = db.query(User).filter(User.role == Role.AGENT).count()
     fees = db.query(FeesConfig).first()
 
     return {
@@ -144,6 +130,3 @@ def admin_status(db: Session = Depends(get_db)):
             "owner_pct": fees.fee_owner_pct if fees else None,
         },
     }
-
-    db.commit()
-    return {"ok": True}
