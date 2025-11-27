@@ -29,17 +29,18 @@ def safe_init_db():
             sleep(delay)
 
     raise RuntimeError("Falha ao conectar ao Postgres após várias tentativas.")
+
 # ================================================
-# ⚠️ RESET TEMPORÁRIO DO BANCO — EXECUTA UMA VEZ
+# ⚠️ RESET TEMPORÁRIO DO BANCO — DESATIVADO
 # ================================================
-try:
-    print("[DB-RESET] Dropando todas tabelas...")
-    Base.metadata.drop_all(bind=engine)
-    print("[DB-RESET] Criando tabelas...")
-    Base.metadata.create_all(bind=engine)
-    print("[DB-RESET] OK")
-except Exception as e:
-    print("[DB-RESET] ERRO:", e)
+# try:
+#     print("[DB-RESET] Dropando todas tabelas...")
+#     Base.metadata.drop_all(bind=engine)
+#     print("[DB-RESET] Criando tabelas...")
+#     Base.metadata.create_all(bind=engine)
+#     print("[DB-RESET] OK")
+# except Exception as e:
+#     print("[DB-RESET] ERRO:", e)
 
 @app.on_event("startup")
 def on_startup():
