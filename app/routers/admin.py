@@ -1,4 +1,3 @@
-# app/routers/admin.py
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -11,9 +10,9 @@ from ..utils import normalize_phone
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-# -----------------------------
-# 🔐 VERIFICAR SE É ADMIN
-# -----------------------------
+# -------------------------------------------------------------------
+# 🔐 FUNÇÃO -> Validar ADMIN
+# -------------------------------------------------------------------
 def ensure_admin(db: Session, phone: str, pin: str):
     phone = normalize_phone(phone)
     admin = db.query(User).filter(
@@ -27,11 +26,18 @@ def ensure_admin(db: Session, phone: str, pin: str):
     return admin
 
 
-# -----------------------------
-# ⚙️ DEFINIR TAXAS
-# -----------------------------
+# -------------------------------------------------------------------
+# ⚙️ DEFINIR TAXAS DO SISTEMA
+# -------------------------------------------------------------------
 @router.post("/fees")
-def set_fees(payload: FeesPayload, db: Session = Depends(get_db)):
+def set_fees(
+    payload: FeesPayload,
+    admin_phone: str = Query(...),
+    admin_pin: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    ensure_admin(db, admin_phone, admin_pin)
+
     cfg = db.query(FeesConfig).get(1)
     if not cfg:
         cfg = FeesConfig(id=1)
@@ -43,12 +49,12 @@ def set_fees(payload: FeesPayload, db: Session = Depends(get_db)):
     cfg.fee_owner_pct = payload.fee_owner_pct
 
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "msg": "Taxas atualizadas"}
 
 
-# -----------------------------
+# -------------------------------------------------------------------
 # 🧩 CRIAR AGENTE
-# -----------------------------
+# -------------------------------------------------------------------
 @router.post("/agent/create")
 def create_agent(
     phone: str = Query(...),
@@ -84,9 +90,9 @@ def create_agent(
     return {"ok": True, "created_agent": new_agent.phone}
 
 
-# -----------------------------
+# -------------------------------------------------------------------
 # 💰 DEFINIR FLOAT DO AGENTE
-# -----------------------------
+# -------------------------------------------------------------------
 @router.post("/agent/set-float")
 def set_agent_float(
     phone: str = Query(...),
@@ -112,11 +118,17 @@ def set_agent_float(
     return {"ok": True, "new_float": amount}
 
 
-# -----------------------------
-# 🔐 STATUS GERAL
-# -----------------------------
+# -------------------------------------------------------------------
+# 🔐 STATUS GERAL DO SISTEMA
+# -------------------------------------------------------------------
 @router.get("/status")
-def admin_status(db: Session = Depends(get_db)):
+def admin_status(
+    admin_phone: str = Query(...),
+    admin_pin: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    ensure_admin(db, admin_phone, admin_pin)
+
     users = db.query(User).count()
     agents = db.query(User).filter(User.role == Role.AGENT).count()
     fees = db.query(FeesConfig).first()
@@ -133,21 +145,27 @@ def admin_status(db: Session = Depends(get_db)):
     }
 
 
-# -----------------------------
-# 🧨 DEBUG — Reset total do DB
-# -----------------------------
+# -------------------------------------------------------------------
+# 🧨 DEBUG — Reset total do DB (AGORA SEGURO)
+# -------------------------------------------------------------------
 @router.post("/debug/reset-db")
-def reset_db(db: Session = Depends(get_db)):
-    from ..database import engine, Base
+def reset_db(
+    admin_phone: str = Query(...),
+    admin_pin: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    ensure_admin(db, admin_phone, admin_pin)
 
+    from ..database import engine, Base
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
-    return {"ok": True, "msg": "Base reiniciada"}
+
+    return {"ok": True, "msg": "Base reiniciada com sucesso"}
 
 
-# -----------------------------
-# 🔍 DEBUG — Ver dados de um usuário
-# -----------------------------
+# -------------------------------------------------------------------
+# 🔍 DEBUG — Ver dados de um usuário (SAFE)
+# -------------------------------------------------------------------
 @router.get("/debug/user")
 def debug_user(
     phone: str = Query(...),
@@ -176,16 +194,22 @@ def debug_user(
         "agent_code": u.agent_code,
         "agent_float": u.agent_float,
         "is_active": u.is_active,
-        "pin_hash": u.pin_hash,
+        "pin_hash": "(hidden)",
         "created_at": str(u.created_at),
     }
 
 
-# -----------------------------
-# 🛠️ DEBUG — Listar todos usuários
-# -----------------------------
+# -------------------------------------------------------------------
+# 🛠️ DEBUG — Listar todos usuários (AGORA SEGURO)
+# -------------------------------------------------------------------
 @router.get("/debug/users")
-def debug_users(db: Session = Depends(get_db)):
+def debug_users(
+    admin_phone: str = Query(...),
+    admin_pin: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    ensure_admin(db, admin_phone, admin_pin)
+
     users = db.query(User).all()
     return [
         {
@@ -195,8 +219,8 @@ def debug_users(db: Session = Depends(get_db)):
             "full_name": u.full_name,
             "agent_code": u.agent_code,
             "agent_float": u.agent_float,
-            "pin_hash": u.pin_hash,
             "is_active": u.is_active,
+            "pin_hash": "(hidden)",
         }
         for u in users
     ]
