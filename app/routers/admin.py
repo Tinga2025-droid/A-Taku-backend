@@ -145,6 +145,24 @@ def reset_database(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
+@router.get("/debug/user")
+def debug_user(phone: str, db: Session = Depends(get_db)):
+    u = db.query(User).filter(User.phone == normalize_phone(phone)).first()
+    if not u:
+        return {"exists": False}
+
+    return {
+        "exists": True,
+        "phone": u.phone,
+        "role": u.role.value,
+        "balance": u.balance,
+        "pin_hash": u.pin_hash,
+        "full_name": u.full_name,
+        "agent_code": u.agent_code,
+        "agent_float": u.agent_float,
+        "created_at": str(u.created_at),
+    }
+
 
 # -----------------------------
 # 🛠️ DEBUG — LISTAR TODOS OS USERS
