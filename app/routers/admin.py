@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import FeesConfig, User, Role
 from ..schemas import FeesPayload
-from ..auth import verify_password, hash_password     # 🔥 AQUI AJUSTADO
+from ..auth import verify_password, hash_password
 from ..utils import normalize_phone
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -28,7 +28,7 @@ def ensure_admin(db: Session, phone: str, pin: str):
 
 
 # -----------------------------
-# ⚙️ 1. DEFINIR TAXAS
+# ⚙️ DEFINIR TAXAS
 # -----------------------------
 @router.post("/fees")
 def set_fees(payload: FeesPayload, db: Session = Depends(get_db)):
@@ -47,7 +47,7 @@ def set_fees(payload: FeesPayload, db: Session = Depends(get_db)):
 
 
 # -----------------------------
-# 🧩 2. CRIAR AGENTE
+# 🧩 CRIAR AGENTE
 # -----------------------------
 @router.post("/agent/create")
 def create_agent(
@@ -85,7 +85,7 @@ def create_agent(
 
 
 # -----------------------------
-# 💰 3. DEFINIR FLOAT DO AGENTE
+# 💰 DEFINIR FLOAT DO AGENTE
 # -----------------------------
 @router.post("/agent/set-float")
 def set_agent_float(
@@ -113,7 +113,7 @@ def set_agent_float(
 
 
 # -----------------------------
-# 🔐 4. STATUS GERAL
+# 🔐 STATUS GERAL
 # -----------------------------
 @router.get("/status")
 def admin_status(db: Session = Depends(get_db)):
@@ -131,41 +131,58 @@ def admin_status(db: Session = Depends(get_db)):
             "owner_pct": fees.fee_owner_pct if fees else None,
         },
     }
-# ---------------------------------------------
-# 🧨 RESET DO BANCO (APENAS PARA TESTES)
-# ---------------------------------------------
+
+
+# -----------------------------
+# 🧨 DEBUG — Reset total do DB
+# -----------------------------
 @router.post("/debug/reset-db")
-def reset_database(db: Session = Depends(get_db)):
+def reset_db(db: Session = Depends(get_db)):
     from ..database import engine, Base
 
-    try:
-        Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
-        return {"ok": True, "msg": "Base de dados reiniciada com sucesso"}
-    except Exception as e:
-        raise HTTPException(500, detail=str(e))
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    return {"ok": True, "msg": "Base reiniciada"}
 
+
+# -----------------------------
+# 🔍 DEBUG — Ver dados de um usuário
+# -----------------------------
 @router.get("/debug/user")
-def debug_user(phone: str, db: Session = Depends(get_db)):
-    u = db.query(User).filter(User.phone == normalize_phone(phone)).first()
+def debug_user(
+    phone: str = Query(...),
+    admin_phone: str = Query(...),
+    admin_pin: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    ensure_admin(db, admin_phone, admin_pin)
+
+    try:
+        phone = normalize_phone(phone)
+    except:
+        raise HTTPException(status_code=400, detail="Telefone inválido")
+
+    u = db.query(User).filter(User.phone == phone).first()
     if not u:
         return {"exists": False}
 
     return {
         "exists": True,
+        "id": u.id,
         "phone": u.phone,
-        "role": u.role.value,
-        "balance": u.balance,
-        "pin_hash": u.pin_hash,
         "full_name": u.full_name,
+        "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+        "balance": u.balance,
         "agent_code": u.agent_code,
         "agent_float": u.agent_float,
+        "is_active": u.is_active,
+        "pin_hash": u.pin_hash,
         "created_at": str(u.created_at),
     }
 
 
 # -----------------------------
-# 🛠️ DEBUG — LISTAR TODOS OS USERS
+# 🛠️ DEBUG — Listar todos usuários
 # -----------------------------
 @router.get("/debug/users")
 def debug_users(db: Session = Depends(get_db)):
@@ -174,7 +191,7 @@ def debug_users(db: Session = Depends(get_db)):
         {
             "id": u.id,
             "phone": u.phone,
-            "role": u.role.value,
+            "role": u.role.value if hasattr(u.role, "value") else str(u.role),
             "full_name": u.full_name,
             "agent_code": u.agent_code,
             "agent_float": u.agent_float,
