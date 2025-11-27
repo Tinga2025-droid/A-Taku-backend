@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import FeesConfig, User, Role
 from ..schemas import FeesPayload
-from ..auth import verify_password, hash_password
+from ..auth import verify_password, hash_password     # 🔥 AQUI AJUSTADO
 from ..utils import normalize_phone
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -79,8 +79,9 @@ def create_agent(
 
     db.add(new_agent)
     db.commit()
+    db.refresh(new_agent)
 
-    return {"ok": True, "created_agent": phone}
+    return {"ok": True, "created_agent": new_agent.phone}
 
 
 # -----------------------------
@@ -112,7 +113,7 @@ def set_agent_float(
 
 
 # -----------------------------
-# 🔐 4. VERIFICAR STATUS GERAL
+# 🔐 4. STATUS GERAL
 # -----------------------------
 @router.get("/status")
 def admin_status(db: Session = Depends(get_db)):
@@ -130,3 +131,24 @@ def admin_status(db: Session = Depends(get_db)):
             "owner_pct": fees.fee_owner_pct if fees else None,
         },
     }
+
+
+# -----------------------------
+# 🛠️ DEBUG — LISTAR TODOS OS USERS
+# -----------------------------
+@router.get("/debug/users")
+def debug_users(db: Session = Depends(get_db)):
+    users = db.query(User).all()
+    return [
+        {
+            "id": u.id,
+            "phone": u.phone,
+            "role": u.role.value,
+            "full_name": u.full_name,
+            "agent_code": u.agent_code,
+            "agent_float": u.agent_float,
+            "pin_hash": u.pin_hash,
+            "is_active": u.is_active,
+        }
+        for u in users
+    ]
