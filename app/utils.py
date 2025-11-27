@@ -2,9 +2,13 @@ from datetime import datetime, timedelta
 import random
 import phonenumbers
 from sqlalchemy.orm import Session
-from .models import Agent
+
+from .models import User, Role
 
 
+# ---------------------------------------------------------
+# NORMALIZAÇÃO DE NÚMEROS
+# ---------------------------------------------------------
 def normalize_phone(raw: str, default_region: str = "MZ") -> str:
     raw = (raw or "").strip()
 
@@ -36,18 +40,32 @@ def normalize_phone(raw: str, default_region: str = "MZ") -> str:
     raise ValueError("Telefone inválido ou não suportado")
 
 
+# ---------------------------------------------------------
+# GERADOR DE CÓDIGO DE AGENTE (USANDO USER)
+# ---------------------------------------------------------
 def generate_agent_code(db: Session):
-    last = db.query(Agent).order_by(Agent.id.desc()).first()
+    last = (
+        db.query(User)
+        .filter(User.role == Role.AGENT)
+        .order_by(User.id.desc())
+        .first()
+    )
     next_id = (last.id + 1) if last else 1
     return f"AG{next_id:04d}"
 
 
+# ---------------------------------------------------------
+# GERADOR DE TXID
+# ---------------------------------------------------------
 def generate_txid():
     now = datetime.utcnow()
     rand = random.randint(100000, 999999)
     return f"TX-{now.strftime('%Y%m%d')}-{rand}"
 
 
+# ---------------------------------------------------------
+# SEGURANÇA DE PIN
+# ---------------------------------------------------------
 def is_locked(user):
     if user.pin_lock_until and user.pin_lock_until > datetime.utcnow():
         return True
@@ -60,6 +78,7 @@ def register_failed_pin(user):
 
     user.pin_fail_count += 1
 
+    # 3 tentativas -> bloqueio por 5 minutos
     if user.pin_fail_count >= 3:
         user.pin_lock_until = datetime.utcnow() + timedelta(minutes=5)
         user.pin_fail_count = 0
