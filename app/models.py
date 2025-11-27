@@ -12,6 +12,8 @@ from sqlalchemy import (
     Boolean,
     Enum as SAEnum,
 )
+from sqlalchemy.orm import relationship
+
 from .database import Base
 
 
@@ -25,7 +27,7 @@ class Role(str, Enum):
 
 
 # ---------------------------------------
-# UTILIZADORES
+# UTILIZADORES (User = cliente + agente + admin)
 # ---------------------------------------
 class User(Base):
     __tablename__ = "users"
@@ -34,38 +36,31 @@ class User(Base):
     phone = Column(String, unique=True, index=True, nullable=False)
     full_name = Column(String, nullable=True)
 
-    kyc_level = Column(Integer, default=0)
-    is_active = Column(Boolean, default=True)
-
+    # Wallet
     balance = Column(Float, default=0.0)
+
+    # Agente
+    agent_code = Column(String, unique=True, nullable=True)
     agent_float = Column(Float, default=0.0)
 
+    # Segurança
     role = Column(SAEnum(Role), default=Role.USER, nullable=False)
     pin_hash = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    # Segurança
+    kyc_level = Column(Integer, default=0)
     pin_fail_count = Column(Integer, default=0)
     pin_lock_until = Column(DateTime, nullable=True)
 
-    # Anti-fraude / abuse
+    # Anti-fraude
     last_tx_at = Column(DateTime, nullable=True)
     tx_rate_count = Column(Integer, default=0)
 
-
-# ---------------------------------------
-# AGENTES
-# ---------------------------------------
-class Agent(Base):
-    __tablename__ = "agents"
-
-    id = Column(Integer, primary_key=True, index=True)
-    phone = Column(String, unique=True, index=True, nullable=False)
-    name = Column(String, nullable=True)
-    agent_code = Column(String, unique=True, index=True, nullable=False)
-
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relações
+    sent_txs = relationship("Tx", foreign_keys="Tx.from_user_id")
+    received_txs = relationship("Tx", foreign_keys="Tx.to_user_id")
 
 
 # ---------------------------------------
@@ -87,7 +82,7 @@ class Tx(Base):
     id = Column(Integer, primary_key=True, index=True)
     ref = Column(String, unique=True, index=True)
 
-    type = Column(SAEnum(TxType), default=TxType.TRANSFER, nullable=False)
+    type = Column(SAEnum(TxType), nullable=False, default=TxType.TRANSFER)
 
     from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -95,14 +90,12 @@ class Tx(Base):
     amount = Column(Float, nullable=False)
     meta = Column(String, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    # OK, FAIL, PENDING
     status = Column(String, default="OK")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 # ---------------------------------------
-# OTP (Código de verificação)
+# OTP
 # ---------------------------------------
 class OTP(Base):
     __tablename__ = "otps"
@@ -127,5 +120,4 @@ class FeesConfig(Base):
     cashout_fee_min = Column(Float, default=float(os.getenv("CASHOUT_FEE_MIN", 5)))
     cashout_fee_max = Column(Float, default=float(os.getenv("CASHOUT_FEE_MAX", 150)))
 
-    # Percentagem do proprietário A-Taku
     fee_owner_pct = Column(Float, default=float(os.getenv("FEE_OWNER_PCT", 60)))

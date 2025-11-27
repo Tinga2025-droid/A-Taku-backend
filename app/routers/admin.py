@@ -131,6 +131,19 @@ def admin_status(db: Session = Depends(get_db)):
             "owner_pct": fees.fee_owner_pct if fees else None,
         },
     }
+# ---------------------------------------------
+# 🧨 RESET DO BANCO (APENAS PARA TESTES)
+# ---------------------------------------------
+@router.post("/debug/reset-db")
+def reset_database(db: Session = Depends(get_db)):
+    from ..database import engine, Base
+
+    try:
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+        return {"ok": True, "msg": "Base de dados reiniciada com sucesso"}
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
 
 
 # -----------------------------
