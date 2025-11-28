@@ -6,7 +6,7 @@ from ..models import User
 from ..schemas import OTPRequest, LoginRequest, TokenResponse
 from ..otp_provider import create_or_update_otp, verify_otp
 from ..auth import create_access_token, hash_password, verify_password
-from ..utils import normalize_phone, is_locked, register_failed_pin, reset_pin_fail
+from ..utils import normalize_phone, is_locked, register_failed_pin, reset_pin_fail, is_weak_pin
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,11 +49,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if is_locked(user):
         raise HTTPException(status_code=400, detail="Conta temporariamente bloqueada. Tente mais tarde.")
 
+    # Se ainda não tiver PIN definido -> definir agora, mas com política forte
     if not user.pin_hash:
+        if is_weak_pin(payload.pin):
+            raise HTTPException(status_code=400, detail="PIN fraco. Evite 0000, 1234, 1111, etc.")
         user.pin_hash = hash_password(payload.pin)
         reset_pin_fail(user)
         db.commit()
     else:
+        # Já tem PIN -> validar login
         if not verify_password(payload.pin, user.pin_hash):
             status = register_failed_pin(user)
             db.commit()

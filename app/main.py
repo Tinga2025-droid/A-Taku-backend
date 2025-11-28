@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 from time import sleep
+import os
 
 from .database import Base, engine, SessionLocal, ensure_admin_exists
 from .routers import auth, auth_otp, wallet, agent, admin, ussd
@@ -15,7 +16,6 @@ app = FastAPI(
 def safe_init_db():
     max_retries = 30
     delay = 2
-
     for attempt in range(1, max_retries + 1):
         try:
             Base.metadata.create_all(bind=engine)
@@ -27,28 +27,17 @@ def safe_init_db():
         except OperationalError:
             print(f"[INIT] Postgres não está pronto ({attempt}/{max_retries})…")
             sleep(delay)
-
-    raise RuntimeError("Falha ao conectar ao Postgres após várias tentativas.")
-
-# ================================================
-# ⚠️ RESET TEMPORÁRIO DO BANCO — DESATIVADO
-# ================================================
-# try:
-#     print("[DB-RESET] Dropando todas tabelas...")
-#     Base.metadata.drop_all(bind=engine)
-#     print("[DB-RESET] Criando tabelas...")
-#     Base.metadata.create_all(bind=engine)
-#     print("[DB-RESET] OK")
-# except Exception as e:
-#     print("[DB-RESET] ERRO:", e)
+    raise RuntimeError("Falha ao conectar ao Postgres.")
 
 @app.on_event("startup")
 def on_startup():
     safe_init_db()
 
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,10 +59,6 @@ def root():
         "docs": "/docs",
         "status": "running"
     }
-
-@app.head("/")
-def head_root():
-    return {}
 
 @app.get("/healthz")
 def health_check():

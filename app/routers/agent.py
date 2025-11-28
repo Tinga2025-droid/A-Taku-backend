@@ -1,4 +1,3 @@
-# app/routers/agent.py
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -9,7 +8,7 @@ from ..database import get_db
 from ..models import User, Role, Tx, TxType, FeesConfig
 from ..schemas import AgentLoginRequest, DepositRequest, CashoutRequest
 from ..auth import create_access_token, verify_password, hash_password, decode_token
-from ..utils import normalize_phone
+from ..utils import normalize_phone, is_locked, register_failed_pin, reset_pin_fail, is_weak_pin
 from ..wallet_advanced import calc_cashout_fee
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -23,8 +22,22 @@ def login_agent(payload: AgentLoginRequest, db: Session = Depends(get_db)):
         .filter(User.phone == phone, User.role == Role.AGENT)
         .first()
     )
-    if not agent or not agent.pin_hash or not verify_password(payload.pin, agent.pin_hash):
+    if not agent:
         raise HTTPException(401, detail="Credenciais inválidas")
+
+    if is_locked(agent):
+        raise HTTPException(status_code=400, detail="Conta de agente temporariamente bloqueada. Tente mais tarde.")
+
+    if not agent.pin_hash or not verify_password(payload.pin, agent.pin_hash):
+        status = register_failed_pin(agent)
+        db.commit()
+        if status == "LOCKED":
+            raise HTTPException(status_code=400, detail="PIN incorreto 3 vezes. Conta de agente bloqueada.")
+        raise HTTPException(401, detail="Credenciais inválidas")
+
+    reset_pin_fail(agent)
+    db.commit()
+
     return {"token": create_access_token(subject=phone)}
 
 
@@ -37,6 +50,10 @@ def seed_agent(
 ):
     """Cria ou atualiza um agente com e-float inicial (uso admin/seed)."""
     phone = normalize_phone(phone)
+
+    if is_weak_pin(pin):
+        raise HTTPException(status_code=400, detail="PIN fraco para agente. Evite 0000, 1234, etc.")
+
     ag = db.query(User).filter(User.phone == phone).first()
     if not ag:
         ag = User(phone=phone, role=Role.AGENT, agent_float=0.0, balance=0.0)

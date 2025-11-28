@@ -98,3 +98,33 @@ def reset_pin_fail(user):
     user.pin_lock_until = None
     db.commit()
     db.close()
+
+
+# ---------------------------------------------------------
+# POLÍTICA DE PIN FORTE
+# ---------------------------------------------------------
+def is_weak_pin(pin: str) -> bool:
+    """
+    Retorna True se o PIN for fraco (0000, 1234, repetidos, sequências óbvias, etc).
+    """
+    if not pin or len(pin) != 4 or not pin.isdigit():
+        return True
+
+    fracos = {
+        "0000", "1111", "2222", "3333", "4444",
+        "5555", "6666", "7777", "8888", "9999",
+        "1234", "4321", "0123", "3210"
+    }
+    if pin in fracos:
+        return True
+
+    # sequências crescentes
+    seq = "0123456789"
+    if pin in seq:
+        return True
+
+    # sequências decrescentes
+    if pin in seq[::-1]:
+        return True
+
+    return False

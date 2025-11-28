@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -5,9 +6,17 @@ from ..database import get_db
 from ..models import FeesConfig, User, Role
 from ..schemas import FeesPayload
 from ..auth import verify_password, hash_password
-from ..utils import normalize_phone
+from ..utils import normalize_phone, is_weak_pin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+DEBUG_ADMIN = os.getenv("DEBUG_ADMIN", "false").lower() == "true"
+
+
+def ensure_debug_enabled():
+    if not DEBUG_ADMIN:
+        # Em produção, isto impede uso dos endpoints /debug/*
+        raise HTTPException(status_code=403, detail="Debug desativado em produção")
 
 
 # -------------------------------------------------------------------
@@ -67,6 +76,9 @@ def create_agent(
 ):
     ensure_admin(db, admin_phone, admin_pin)
 
+    if is_weak_pin(pin):
+        raise HTTPException(status_code=400, detail="PIN fraco para agente. Evite 0000, 1234, etc.")
+
     phone = normalize_phone(phone)
 
     if db.query(User).filter(User.phone == phone).first():
@@ -125,7 +137,7 @@ def set_agent_float(
 def admin_status(
     admin_phone: str = Query(...),
     admin_pin: str = Query(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     ensure_admin(db, admin_phone, admin_pin)
 
@@ -146,15 +158,16 @@ def admin_status(
 
 
 # -------------------------------------------------------------------
-# 🧨 DEBUG — Reset total do DB (AGORA SEGURO)
+# 🧨 DEBUG — Reset total do DB (AGORA REALMENTE SEGURO)
 # -------------------------------------------------------------------
 @router.post("/debug/reset-db")
 def reset_db(
     admin_phone: str = Query(...),
     admin_pin: str = Query(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     ensure_admin(db, admin_phone, admin_pin)
+    ensure_debug_enabled()
 
     from ..database import engine, Base
     Base.metadata.drop_all(bind=engine)
@@ -174,10 +187,11 @@ def debug_user(
     db: Session = Depends(get_db),
 ):
     ensure_admin(db, admin_phone, admin_pin)
+    ensure_debug_enabled()
 
     try:
         phone = normalize_phone(phone)
-    except:
+    except Exception:
         raise HTTPException(status_code=400, detail="Telefone inválido")
 
     u = db.query(User).filter(User.phone == phone).first()
@@ -206,9 +220,10 @@ def debug_user(
 def debug_users(
     admin_phone: str = Query(...),
     admin_pin: str = Query(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     ensure_admin(db, admin_phone, admin_pin)
+    ensure_debug_enabled()
 
     users = db.query(User).all()
     return [

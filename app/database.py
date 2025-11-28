@@ -26,6 +26,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -33,24 +34,40 @@ def get_db():
     finally:
         db.close()
 
+
 from .models import User
 from .auth import hash_password
 
-def ensure_admin_exists(db: Session):
-    admin_phone = "+258879512430"
-    admin_pin = "4829"
+# ⚠️ Lidos do ambiente (NÃO hardcoded)
+ADMIN_PHONE = os.getenv("ADMIN_PHONE")
+ADMIN_PIN = os.getenv("ADMIN_PIN")
 
-    admin = db.query(User).filter(User.phone == admin_phone).first()
+
+def ensure_admin_exists(db: Session):
+    """
+    Garante que existe um ADMIN inicial.
+    Usa ADMIN_PHONE/ADMIN_PIN do .env apenas para criar o primeiro admin.
+    Em produção, recomenda-se depois alterar o PIN via painel e remover ADMIN_PIN do .env.
+    """
+    if not ADMIN_PHONE:
+        print("[ADMIN] ADMIN_PHONE não definido. Nenhum admin automático será criado.")
+        return
+
+    admin = db.query(User).filter(User.phone == ADMIN_PHONE).first()
     if not admin:
+        print("[ADMIN] Criando admin inicial...")
         admin = User(
-            phone=admin_phone,
+            phone=ADMIN_PHONE,
             full_name="Administrador Geral",
             kyc_level=2,
             is_active=True,
             balance=0.0,
             agent_float=0.0,
-            role="ADMIN",
-            pin_hash=hash_password(admin_pin),
+            role="ADMIN",  # se Role for Enum, isto continua a funcionar se o tipo for SAEnum
+            pin_hash=hash_password(ADMIN_PIN) if ADMIN_PIN else hash_password("1234"),
         )
         db.add(admin)
         db.commit()
+        print("[ADMIN] Admin criado.")
+    else:
+        print("[ADMIN] Admin já existe.")
